@@ -1,5 +1,7 @@
-import socket
+"""A simple Redis clone server implemented in Python using sockets."""
 
+import socket
+from .parser import parse_command
 
 HOST = "127.0.0.1"
 PORT = 6379
@@ -20,11 +22,36 @@ def handle_client(client_socket, client_address):
                 print(f"Client disconnected: {client_address}")
                 break
 
-            command = data.decode("utf-8").strip()
-            print(f"Received from {client_address}: {command}")
+            raw_input = data.decode("utf-8").strip()
+            print(f"Received from {client_address}: {raw_input}")
 
-            if command.upper() == "PING":
+            command, args = parse_command(raw_input)
+
+            if command is None:
+                client_socket.sendall(b"-ERR empty command\r\n")
+                continue
+
+            if validate_command(command, args)[0] is False:
+                client_socket.sendall(validate_command(command, args)[1])
+                continue
+
+            if command == "PING":
                 client_socket.sendall(b"+PONG\r\n")
+            elif command == "SET":
+                client_socket.sendall(
+                    f"+PARSED SET command with args: {args}\r\n".encode(
+                        "utf-8")
+                )
+            elif command == "GET":
+                client_socket.sendall(
+                    f"+PARSED GET command with args: {args}\r\n".encode(
+                        "utf-8")
+                )
+            elif command == "DEL":
+                client_socket.sendall(
+                    f"+PARSED DEL command with args: {args}\r\n".encode(
+                        "utf-8")
+                )
             else:
                 client_socket.sendall(b"-ERR unknown command\r\n")
 
@@ -32,6 +59,26 @@ def handle_client(client_socket, client_address):
         print(f"Client connection reset: {client_address}")
     finally:
         client_socket.close()
+
+
+def validate_command(command, args):
+    """Validate the command and its arguments."""
+    if command == "PING":
+        return True, None
+    elif command == "SET":
+        if len(args) != 2:
+            return False, b"-ERR wrong number of arguments for SET\r\n"
+        return True, None
+    elif command == "GET":
+        if len(args) != 1:
+            return False, b"-ERR wrong number of arguments for GET\r\n"
+        return True, None
+    elif command == "DEL":
+        if len(args) < 1:
+            return False, b"-ERR wrong number of arguments for DEL\r\n"
+        return True, None
+    else:
+        return False, b"-ERR unknown command\r\n"
 
 # Basic Redis clone server that accepts connections and responds to commands.
 
