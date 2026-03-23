@@ -30,3 +30,31 @@ class KeyValueStore:
     def exists(self, key):
         """Check if a key exists in the store. Returns 1 if exists, 0 if not."""
         return 1 if key in self.data else 0
+
+    def keys(self):
+        """Return a list of all keys in the store."""
+        return sorted(self.data.keys())
+
+    def flushall(self):
+        """Clear all key-value pairs from the store."""
+        count = len(self.data)
+        self.data.clear()
+        return count
+
+    def incr(self, key):
+        """Increment the integer value of a key by one.
+        If the key does not exist, it is set to 1."""
+        if key not in self.data:
+            self.data[key] = "1"
+            return 1
+
+        value = self.data[key]
+
+        try:
+            number = int(value)
+        except ValueError as e:
+            raise ValueError("value is not an integer") from e
+
+        number += 1
+        self.data[key] = str(number)
+        return number

@@ -21,5 +21,21 @@ def validate_command(command, args):
         if len(args) != 1:
             return False, b"-ERR wrong number of arguments for EXISTS\r\n"
         return True, None
+
+    elif command == "KEYS":
+        if len(args) != 0:
+            return False, b"-ERR KEYS takes no arguments\r\n"
+        return True, None
+
+    elif command == "FLUSHALL":
+        if len(args) != 0:
+            return False, b"-ERR FLUSHALL takes no arguments\r\n"
+        return True, None
+
+    elif command == "INCR":
+        if len(args) != 1:
+            return False, b"-ERR wrong number of arguments for INCR\r\n"
+        return True, None
+
     else:
         return False, b"-ERR unknown command\r\n"

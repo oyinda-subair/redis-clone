@@ -77,6 +77,31 @@ def handle_client(client_socket, client_address):
                     f":{exists}\r\n".encode("utf-8")
                 )
 
+            elif command == "KEYS":
+
+                keys = store.keys()
+                if not keys:
+                    client_socket.sendall(b"*0\r\n")
+                else:
+                    response = f"*{len(keys)}\r\n"
+                    for key in keys:
+                        response += f"${len(key)}\r\n{key}\r\n"
+                    client_socket.sendall(response.encode("utf-8"))
+
+            elif command == "FLUSHALL":
+
+                deleted_count = store.flushall()
+                client_socket.sendall(f":{deleted_count}\r\n".encode("utf-8"))
+
+            elif command == "INCR":
+
+                key = args[0]
+
+                try:
+                    new_value = store.incr(key)
+                    client_socket.sendall(f":{new_value}\r\n".encode("utf-8"))
+                except ValueError:
+                    client_socket.sendall(b"-ERR value is not an integer\r\n")
             else:
                 client_socket.sendall(b"-ERR unknown command\r\n")
 
