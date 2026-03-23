@@ -1,6 +1,8 @@
 """A simple Redis clone server implemented in Python using sockets."""
 
 import socket
+import threading
+
 from .store import KeyValueStore
 from .parser import parse_command
 from .utils import validate_command
@@ -16,7 +18,9 @@ store = KeyValueStore()
 
 def handle_client(client_socket, client_address):
     """Handle a client connection, receive commands, and send responses."""
-    print(f"Client connected from {client_address}")
+
+    thread_name = threading.current_thread().name
+    print(f"[{thread_name}] Client connected from {client_address}")
     client_socket.sendall(b"+OK\r\n")
 
     try:
@@ -24,11 +28,11 @@ def handle_client(client_socket, client_address):
             data = client_socket.recv(1024)
 
             if not data:
-                print(f"Client disconnected: {client_address}")
+                print(f"[{thread_name}] Client disconnected: {client_address}")
                 break
 
             raw_input = data.decode("utf-8").strip()
-            print(f"Received from {client_address}: {raw_input}")
+            print(f"[{thread_name}] Received from {client_address}: {raw_input}")
 
             command, args = parse_command(raw_input)
 
@@ -126,7 +130,13 @@ def main():
     try:
         while True:
             client_socket, client_address = server_socket.accept()
-            handle_client(client_socket, client_address)
+
+            client_thread = threading.Thread(
+                target=handle_client,
+                args=(client_socket, client_address),
+                daemon=True,
+            )
+            client_thread.start()
 
     except KeyboardInterrupt:
         print("\nShutting down server...")

@@ -1,5 +1,5 @@
 """server/store.py"""
-
+import threading
 
 class KeyValueStore:
     """
@@ -10,51 +10,59 @@ class KeyValueStore:
 
     def __init__(self):
         self.data = {}
+        self.lock = threading.Lock()  # To ensure thread safety for concurrent access
 
     def set(self, key, value):
         """Set a key-value pair in the store."""
-        self.data[key] = value
-        return "OK"
+        with self.lock:
+            self.data[key] = value
+            return "OK"
 
     def get(self, key):
         """Get the value associated with a key."""
-        return self.data.get(key)
+        with self.lock:
+            return self.data.get(key)
 
     def delete(self, key):
         """Delete a key from the store. Returns 1 if deleted, 0 if not found."""
-        if key in self.data:
-            del self.data[key]
-            return 1
-        return 0
+        with self.lock:
+            if key in self.data:
+                del self.data[key]
+                return 1
+            return 0
 
     def exists(self, key):
         """Check if a key exists in the store. Returns 1 if exists, 0 if not."""
-        return 1 if key in self.data else 0
+        with self.lock:
+            return 1 if key in self.data else 0
 
     def keys(self):
         """Return a list of all keys in the store."""
-        return sorted(self.data.keys())
+        with self.lock:
+            return sorted(self.data.keys())
 
     def flushall(self):
         """Clear all key-value pairs from the store."""
-        count = len(self.data)
-        self.data.clear()
-        return count
+        with self.lock:
+          count = len(self.data)
+          self.data.clear()
+          return count
 
     def incr(self, key):
         """Increment the integer value of a key by one.
         If the key does not exist, it is set to 1."""
-        if key not in self.data:
-            self.data[key] = "1"
-            return 1
+        with self.lock:
+            if key not in self.data:
+                self.data[key] = "1"
+                return 1
 
-        value = self.data[key]
+            value = self.data[key]
 
-        try:
-            number = int(value)
-        except ValueError as e:
-            raise ValueError("value is not an integer") from e
+            try:
+                number = int(value)
+            except ValueError as e:
+                raise ValueError("value is not an integer") from e
 
-        number += 1
-        self.data[key] = str(number)
-        return number
+            number += 1
+            self.data[key] = str(number)
+            return number
