@@ -1,10 +1,15 @@
 """A simple Redis clone server implemented in Python using sockets."""
 
 import socket
+from .store import KeyValueStore
 from .parser import parse_command
+from .utils import validate_command
 
 HOST = "127.0.0.1"
 PORT = 6379
+
+# Initialize the Redis store
+store = KeyValueStore()
 
 # Function to handle client connections and respond to commands.
 
@@ -31,27 +36,47 @@ def handle_client(client_socket, client_address):
                 client_socket.sendall(b"-ERR empty command\r\n")
                 continue
 
+            # Validate the command and its arguments before processing
             if validate_command(command, args)[0] is False:
                 client_socket.sendall(validate_command(command, args)[1])
                 continue
 
             if command == "PING":
                 client_socket.sendall(b"+PONG\r\n")
+
             elif command == "SET":
+                key, value = args
+                result = store.set(key, value)
                 client_socket.sendall(
-                    f"+PARSED SET command with args: {args}\r\n".encode(
-                        "utf-8")
+                    f"+{result}\r\n".encode("utf-8")
                 )
+
             elif command == "GET":
-                client_socket.sendall(
-                    f"+PARSED GET command with args: {args}\r\n".encode(
-                        "utf-8")
-                )
+                key = args[0]
+                value = store.get(key)
+
+                if value is None:
+                    client_socket.sendall(b"$-1\r\n")
+                else:
+                    client_socket.sendall(
+                        f"${len(value)}\r\n{value}\r\n".encode(
+                            "utf-8")
+                    )
+
             elif command == "DEL":
+                key = args[0]
+                deleted_count = store.delete(key)
                 client_socket.sendall(
-                    f"+PARSED DEL command with args: {args}\r\n".encode(
-                        "utf-8")
+                    f":{deleted_count}\r\n".encode("utf-8")
                 )
+
+            elif command == "EXISTS":
+                key = args[0]
+                exists = store.exists(key)
+                client_socket.sendall(
+                    f":{exists}\r\n".encode("utf-8")
+                )
+
             else:
                 client_socket.sendall(b"-ERR unknown command\r\n")
 
@@ -59,26 +84,6 @@ def handle_client(client_socket, client_address):
         print(f"Client connection reset: {client_address}")
     finally:
         client_socket.close()
-
-
-def validate_command(command, args):
-    """Validate the command and its arguments."""
-    if command == "PING":
-        return True, None
-    elif command == "SET":
-        if len(args) != 2:
-            return False, b"-ERR wrong number of arguments for SET\r\n"
-        return True, None
-    elif command == "GET":
-        if len(args) != 1:
-            return False, b"-ERR wrong number of arguments for GET\r\n"
-        return True, None
-    elif command == "DEL":
-        if len(args) < 1:
-            return False, b"-ERR wrong number of arguments for DEL\r\n"
-        return True, None
-    else:
-        return False, b"-ERR unknown command\r\n"
 
 # Basic Redis clone server that accepts connections and responds to commands.
 
