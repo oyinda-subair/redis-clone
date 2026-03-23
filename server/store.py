@@ -129,7 +129,30 @@ class KeyValueStore:
             remaining = int(self.expiry[key] - time.time())
             return max(remaining, 0)
 
+    def export_snapshot(self):
+        """Return a snapshot of the current state of the
+        store for persistence."""
+        with self.lock:
+            expired_keys = [key for key in self.data if self._is_expired(key)]
+            for key in expired_keys:
+                self.data.pop(key, None)
+                self.expiry.pop(key, None)
+
+            return dict(self.data), dict(self.expiry)
+
+    def load_snapshot(self, data, expiry):
+        """Load a snapshot of the store state from persistence."""
+        with self.lock:
+            self.data = dict(data)
+            self.expiry = dict(expiry)
+
+            expired_keys = [key for key in self.data if self._is_expired(key)]
+            for key in expired_keys:
+                self.data.pop(key, None)
+                self.expiry.pop(key, None)
+
     def debug_dump(self):
+        """Return a snapshot of the current state of the store for debugging."""
         with self.lock:
             return {
                 "data": dict(self.data),

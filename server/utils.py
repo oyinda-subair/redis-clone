@@ -46,5 +46,10 @@ def validate_command(command, args):
         if len(args) != 1:
             return False, b"-ERR wrong number of arguments for TTL\r\n"
         return True, None
+
+    elif command == "SAVE":
+        if len(args) != 0:
+            return False, b"-ERR SAVE takes no arguments\r\n"
+        return True, None
     else:
         return False, b"-ERR unknown command\r\n"

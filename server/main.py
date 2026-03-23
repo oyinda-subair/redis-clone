@@ -1,17 +1,38 @@
 """A simple Redis clone server implemented in Python using sockets."""
 
+import os
 import socket
 import threading
 
-from .store import KeyValueStore
 from .parser import parse_command
+from .persistence import SnapshotManager
+from .store import KeyValueStore
 from .utils import validate_command
 
 HOST = "127.0.0.1"
 PORT = 6379
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SNAPSHOT_PATH = os.path.join(BASE_DIR, "..", "data", "snapshot.json")
+
 # Initialize the Redis store
 store = KeyValueStore()
+# Load existing data from snapshot if available
+snapshot_manager = SnapshotManager(SNAPSHOT_PATH)
+
+
+def save_snapshot():
+    """Save the current state of the key-value store to a snapshot file."""
+    data, expiry = store.export_snapshot()
+    snapshot_manager.save(data, expiry)
+    print(f"Snapshot saved with {len(data)} keys")
+
+
+def load_snapshot():
+    """Load the key-value store state from a snapshot file."""
+    data, expiry = snapshot_manager.load()
+    store.load_snapshot(data, expiry)
+    print(f"Loaded snapshot with {len(data)} keys")
 
 # Function to handle client connections and respond to commands.
 
@@ -51,6 +72,8 @@ def handle_client(client_socket, client_address):
             elif command == "SET":
                 key, value = args
                 result = store.set(key, value)
+                save_snapshot()
+
                 client_socket.sendall(
                     f"+{result}\r\n".encode("utf-8")
                 )
@@ -70,6 +93,10 @@ def handle_client(client_socket, client_address):
             elif command == "DEL":
                 key = args[0]
                 deleted_count = store.delete(key)
+
+                if deleted_count:
+                    save_snapshot()
+
                 client_socket.sendall(
                     f":{deleted_count}\r\n".encode("utf-8")
                 )
@@ -95,6 +122,10 @@ def handle_client(client_socket, client_address):
             elif command == "FLUSHALL":
 
                 deleted_count = store.flushall()
+
+                if deleted_count:
+                    save_snapshot()
+
                 client_socket.sendall(f":{deleted_count}\r\n".encode("utf-8"))
 
             elif command == "INCR":
@@ -103,6 +134,7 @@ def handle_client(client_socket, client_address):
 
                 try:
                     new_value = store.incr(key)
+                    save_snapshot()
                     client_socket.sendall(f":{new_value}\r\n".encode("utf-8"))
                 except ValueError:
                     client_socket.sendall(b"-ERR value is not an integer\r\n")
@@ -123,6 +155,9 @@ def handle_client(client_socket, client_address):
                     continue
 
                 result = store.expire(key, seconds)
+
+                if result:
+                    save_snapshot()
                 client_socket.sendall(f":{result}\r\n".encode("utf-8"))
 
             elif command == "TTL":
@@ -130,6 +165,14 @@ def handle_client(client_socket, client_address):
 
                 ttl_value = store.ttl(key)
                 client_socket.sendall(f":{ttl_value}\r\n".encode("utf-8"))
+
+            elif command == "SAVE":
+                if len(args) != 0:
+                    client_socket.sendall(b"-ERR SAVE takes no arguments\r\n")
+                    continue
+
+                save_snapshot()
+                client_socket.sendall(b"+OK\r\n")
 
             else:
                 client_socket.sendall(b"-ERR unknown command\r\n")
@@ -145,6 +188,9 @@ def handle_client(client_socket, client_address):
 def main():
     """Create a TCP socket, bind it to the specified host and port,
     and listen for incoming connections."""
+
+    load_snapshot()
+
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((HOST, PORT))
@@ -165,6 +211,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\nShutting down server...")
+        save_snapshot()
 
     finally:
         server_socket.close()
