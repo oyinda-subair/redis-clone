@@ -106,6 +106,31 @@ def handle_client(client_socket, client_address):
                     client_socket.sendall(f":{new_value}\r\n".encode("utf-8"))
                 except ValueError:
                     client_socket.sendall(b"-ERR value is not an integer\r\n")
+
+            elif command == "EXPIRE":
+                key = args[0]
+
+                try:
+                    seconds = int(args[1])
+                except ValueError:
+                    client_socket.sendall(
+                        b"-ERR EXPIRE seconds must be an integer\r\n")
+                    continue
+
+                if seconds < 0:
+                    client_socket.sendall(
+                        b"-ERR EXPIRE seconds must be non-negative\r\n")
+                    continue
+
+                result = store.expire(key, seconds)
+                client_socket.sendall(f":{result}\r\n".encode("utf-8"))
+
+            elif command == "TTL":
+                key = args[0]
+
+                ttl_value = store.ttl(key)
+                client_socket.sendall(f":{ttl_value}\r\n".encode("utf-8"))
+
             else:
                 client_socket.sendall(b"-ERR unknown command\r\n")
 

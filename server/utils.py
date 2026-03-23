@@ -37,5 +37,14 @@ def validate_command(command, args):
             return False, b"-ERR wrong number of arguments for INCR\r\n"
         return True, None
 
+    elif command == "EXPIRE":
+        if len(args) != 2:
+            return False, b"-ERR wrong number of arguments for EXPIRE\r\n"
+        return True, None
+
+    elif command == "TTL":
+        if len(args) != 1:
+            return False, b"-ERR wrong number of arguments for TTL\r\n"
+        return True, None
     else:
         return False, b"-ERR unknown command\r\n"
