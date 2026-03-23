@@ -1,19 +1,14 @@
 """A simple Redis clone server implemented in Python using sockets."""
 
-import os
 import socket
 import threading
 
+from .commands import execute_command
+from .config import HOST, PORT, SNAPSHOT_PATH
 from .parser import parse_command
 from .persistence import SnapshotManager
 from .store import KeyValueStore
 from .utils import validate_command
-
-HOST = "127.0.0.1"
-PORT = 6379
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SNAPSHOT_PATH = os.path.join(BASE_DIR, "..", "data", "snapshot.json")
 
 # Initialize the Redis store
 store = KeyValueStore()
@@ -53,6 +48,11 @@ def handle_client(client_socket, client_address):
                 break
 
             raw_input = data.decode("utf-8").strip()
+
+            if not raw_input:
+                client_socket.sendall(b"-ERR empty command\r\n")
+                continue
+
             print(f"[{thread_name}] Received from {client_address}: {raw_input}")
 
             command, args = parse_command(raw_input)
@@ -66,116 +66,9 @@ def handle_client(client_socket, client_address):
                 client_socket.sendall(validate_command(command, args)[1])
                 continue
 
-            if command == "PING":
-                client_socket.sendall(b"+PONG\r\n")
-
-            elif command == "SET":
-                key, value = args
-                result = store.set(key, value)
-                save_snapshot()
-
-                client_socket.sendall(
-                    f"+{result}\r\n".encode("utf-8")
-                )
-
-            elif command == "GET":
-                key = args[0]
-                value = store.get(key)
-
-                if value is None:
-                    client_socket.sendall(b"$-1\r\n")
-                else:
-                    client_socket.sendall(
-                        f"${len(value)}\r\n{value}\r\n".encode(
-                            "utf-8")
-                    )
-
-            elif command == "DEL":
-                key = args[0]
-                deleted_count = store.delete(key)
-
-                if deleted_count:
-                    save_snapshot()
-
-                client_socket.sendall(
-                    f":{deleted_count}\r\n".encode("utf-8")
-                )
-
-            elif command == "EXISTS":
-                key = args[0]
-                exists = store.exists(key)
-                client_socket.sendall(
-                    f":{exists}\r\n".encode("utf-8")
-                )
-
-            elif command == "KEYS":
-
-                keys = store.keys()
-                if not keys:
-                    client_socket.sendall(b"*0\r\n")
-                else:
-                    response = f"*{len(keys)}\r\n"
-                    for key in keys:
-                        response += f"${len(key)}\r\n{key}\r\n"
-                    client_socket.sendall(response.encode("utf-8"))
-
-            elif command == "FLUSHALL":
-
-                deleted_count = store.flushall()
-
-                if deleted_count:
-                    save_snapshot()
-
-                client_socket.sendall(f":{deleted_count}\r\n".encode("utf-8"))
-
-            elif command == "INCR":
-
-                key = args[0]
-
-                try:
-                    new_value = store.incr(key)
-                    save_snapshot()
-                    client_socket.sendall(f":{new_value}\r\n".encode("utf-8"))
-                except ValueError:
-                    client_socket.sendall(b"-ERR value is not an integer\r\n")
-
-            elif command == "EXPIRE":
-                key = args[0]
-
-                try:
-                    seconds = int(args[1])
-                except ValueError:
-                    client_socket.sendall(
-                        b"-ERR EXPIRE seconds must be an integer\r\n")
-                    continue
-
-                if seconds < 0:
-                    client_socket.sendall(
-                        b"-ERR EXPIRE seconds must be non-negative\r\n")
-                    continue
-
-                result = store.expire(key, seconds)
-
-                if result:
-                    save_snapshot()
-                client_socket.sendall(f":{result}\r\n".encode("utf-8"))
-
-            elif command == "TTL":
-                key = args[0]
-
-                ttl_value = store.ttl(key)
-                client_socket.sendall(f":{ttl_value}\r\n".encode("utf-8"))
-
-            elif command == "SAVE":
-                if len(args) != 0:
-                    client_socket.sendall(b"-ERR SAVE takes no arguments\r\n")
-                    continue
-
-                save_snapshot()
-                client_socket.sendall(b"+OK\r\n")
-
-            else:
-                client_socket.sendall(b"-ERR unknown command\r\n")
+            # Execute the command and get the response
+            response = execute_command(command, args, store, save_snapshot)
+            client_socket.sendall(response)
 
     except ConnectionResetError:
         print(f"Client connection reset: {client_address}")
