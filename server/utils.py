@@ -51,5 +51,9 @@ def validate_command(command, args):
         if len(args) != 0:
             return False, b"-ERR SAVE takes no arguments\r\n"
         return True, None
+
+    elif command in {"MULTI", "EXEC", "DISCARD"}:
+        return True, None
+
     else:
-        return False, b"-ERR unknown command\r\n"
+        return False, b"[validate] -ERR unknown command\r\n"

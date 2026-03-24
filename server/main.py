@@ -40,6 +40,9 @@ def handle_client(client_socket, client_address):
 
     buffer = ""
 
+    transaction_mode = False
+    transaction_queue = []
+
     try:
         while True:
             data = client_socket.recv(4096)
@@ -104,10 +107,62 @@ def handle_client(client_socket, client_address):
                     client_socket.sendall(validate_command(command, args)[1])
                     continue
 
-                # Execute the command and get the response
-                response = execute_command(command, args, store, save_snapshot)
+                if command == "MULTI":
+                    if transaction_mode:
+                        client_socket.sendall(
+                            b"-ERR MULTI calls cannot be nested\r\n")
+                    else:
+                        transaction_mode = True
+                        transaction_queue = []
+                        client_socket.sendall(b"+OK\r\n")
 
-                client_socket.sendall(response)
+                elif command == "DISCARD":
+                    if not transaction_mode:
+                        client_socket.sendall(
+                            b"-ERR DISCARD without MULTI\r\n")
+                    else:
+                        transaction_mode = False
+                        transaction_queue = []
+                        client_socket.sendall(b"+OK\r\n")
+
+                elif command == "EXEC":
+                    if not transaction_mode:
+                        client_socket.sendall(b"-ERR EXEC without MULTI\r\n")
+                    else:
+                        responses = []
+
+                        for queued_command, queued_args in transaction_queue:
+                            response = execute_command(
+                                queued_command,
+                                queued_args,
+                                store,
+                                save_snapshot,
+                            )
+                            responses.append(response.decode("utf-8").strip())
+
+                        transaction_mode = False
+                        transaction_queue = []
+
+                        result = f"*{len(responses)}\r\n"
+                        for item in responses:
+                            result += f"${len(item)}\r\n{item}\r\n"
+
+                        client_socket.sendall(result.encode("utf-8"))
+
+                elif transaction_mode:
+                    if command in {"MULTI", "EXEC", "DISCARD"}:
+                        client_socket.sendall(
+                            b"-ERR invalid transaction state\r\n")
+                    else:
+                        transaction_queue.append((command, args))
+                        client_socket.sendall(b"+QUEUED\r\n")
+
+                else:
+                    # Execute the command and get the response
+                    response = execute_command(
+                        command, args, store, save_snapshot)
+
+                    client_socket.sendall(response)
 
     except ConnectionResetError:
         print(f"[{thread_name}] Client connection reset: {client_address}")

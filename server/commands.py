@@ -120,5 +120,8 @@ def execute_command(command, args, store, save_snapshot):
         save_snapshot()
         return b"+OK\r\n"
 
+    elif command in {"MULTI", "EXEC", "DISCARD"}:
+        return b"-ERR transaction command should be handled in client session\r\n"
+
     else:
         return b"-ERR unknown command\r\n"
