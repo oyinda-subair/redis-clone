@@ -37,41 +37,80 @@ def handle_client(client_socket, client_address):
 
     thread_name = threading.current_thread().name
     print(f"[{thread_name}] Client connected from {client_address}")
-    client_socket.sendall(b"+OK\r\n")
+
+    buffer = ""
 
     try:
         while True:
-            data = client_socket.recv(1024)
+            data = client_socket.recv(4096)
 
             if not data:
                 print(f"[{thread_name}] Client disconnected: {client_address}")
                 break
 
-            raw_input = data.decode("utf-8").strip()
+            buffer += data.decode("utf-8")
 
-            if not raw_input:
-                client_socket.sendall(b"-ERR empty command\r\n")
-                continue
+            while True:
+                if not buffer.strip():
+                    break
 
-            print(f"[{thread_name}] Received from {client_address}: {raw_input}")
+                command_text = None
+                if buffer.startswith("*"):
+                    # Split by newline to handle RESP format
+                    lines = buffer.split("\n")
 
-            command, args = parse_command(raw_input)
+                    if len(lines) < 3:
+                        break  # Wait for more data
 
-            if command is None:
-                client_socket.sendall(b"-ERR empty command\r\n")
-                continue
+                    try:
+                        num_parts = int(lines[0][1:])
 
-            # Validate the command and its arguments before processing
-            if validate_command(command, args)[0] is False:
-                client_socket.sendall(validate_command(command, args)[1])
-                continue
+                    except ValueError:
+                        client_socket.sendall(b"-ERR invalid RESP format\r\n")
+                        buffer = ""  # Clear buffer on error
+                        break
 
-            # Execute the command and get the response
-            response = execute_command(command, args, store, save_snapshot)
-            client_socket.sendall(response)
+                    expected_lines = 1 + (num_parts * 2)
+
+                    if len(lines) < expected_lines + 1:
+                        break  # Wait for more data
+
+                    command_lines = lines[:expected_lines]
+                    command_text = "\r\n".join(command_lines)
+                    buffer = "\r\n".join(
+                        lines[expected_lines:])  # Remaining data
+                else:
+                    if "\n" not in buffer:
+                        break  # Wait for more data
+
+                    line, buffer = buffer.split("\n", 1)
+                    command_text = line.strip().replace("\r", "")
+
+                if not command_text:
+                    continue
+
+                print(
+                    f"[{thread_name}] Received from {client_address}: {repr(command_text)}")
+
+                command, args = parse_command(command_text)
+
+                if command is None:
+                    client_socket.sendall(b"-ERR empty command\r\n")
+                    continue
+
+                # Validate the command and its arguments before processing
+
+                if validate_command(command, args)[0] is False:
+                    client_socket.sendall(validate_command(command, args)[1])
+                    continue
+
+                # Execute the command and get the response
+                response = execute_command(command, args, store, save_snapshot)
+
+                client_socket.sendall(response)
 
     except ConnectionResetError:
-        print(f"Client connection reset: {client_address}")
+        print(f"[{thread_name}] Client connection reset: {client_address}")
     finally:
         client_socket.close()
 
